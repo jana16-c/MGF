@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Processador de Ponto em PDF para Excel</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    </script>
+
+    <style>
+        :root {
+            --bg:#0b1220; --card:#0f1a2e; --muted:#8aa0c2; --text:#e7eefc;
+            --line:rgba(255,255,255,.10); --blue:#4aa3ff;
+            --danger-bg:rgba(255,80,80,.10); --danger:#fecdd3;
+        }
+        * { box-sizing:border-box; }
+        body {
+            margin:0;
+            font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+            background:
+                radial-gradient(1200px 800px at 20% -10%,rgba(74,163,255,.20),transparent 60%),
+                radial-gradient(900px 700px at 110% 10%,rgba(43,107,255,.16),transparent 55%),
+                var(--bg);
+            color:var(--text);
+            padding:28px 18px 48px;
+        }
+        .container { width:100%; max-width:1000px; margin:0 auto; }
+        header { margin-bottom:18px; }
+        h1 { margin:0; font-size:22px; letter-spacing:.2px; }
+        .sub { color:var(--muted); font-size:13px; line-height:1.35; margin-top:6px; }
+
+        .card {
+            background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.03));
+            border:1px solid var(--line); border-radius:16px; overflow:hidden;
+            box-shadow:0 10px 30px rgba(0,0,0,.25); margin-bottom:24px;
+        }
+        .section { padding:20px; border-top:1px solid var(--line); }
+        .section:first-child { border-top:none; }
+        label { display:block; color:var(--muted); font-size:13px; margin:0 0 10px; font-weight:600; }
+
+        .upload-area {
+            display:flex; flex-direction:column; align-items:center; justify-content:center;
+            gap:10px; width:100%; border:2px dashed rgba(74,163,255,.4);
+            border-radius:12px; padding:30px; background:rgba(0,0,0,.18); transition:.3s; cursor:pointer;
+        }
+        .upload-area:hover { border-color:var(--blue); background:rgba(74,163,255,.05); }
+        .upload-area input[type="file"] {
+            font-size:13px; color:var(--muted); cursor:pointer;
+            background:transparent; border:none; outline:none; width:100%; text-align:center;
+        }
+        .upload-area input[type="file"]::file-selector-button {
+            background:rgba(74,163,255,.15); color:var(--blue);
+            border:1px solid rgba(74,163,255,.4); border-radius:8px;
+            padding:6px 14px; cursor:pointer; font-weight:600; font-size:13px;
+            transition:.2s; margin-right:10px;
+        }
+        .upload-area input[type="file"]::file-selector-button:hover { background:rgba(74,163,255,.3); }
+        .upload-text { color:var(--text); font-weight:600; font-size:15px; }
+        .upload-subtext { color:var(--muted); font-size:12px; }
+
+        .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-top:16px; }
+        button {
+            appearance:none; border:1px solid var(--line); color:var(--text);
+            padding:12px 16px; border-radius:12px; cursor:pointer; font-weight:600; transition:.2s; font-size:14px;
+        }
+        .btn-main { background:rgba(74,163,255,.12); color:var(--blue); border-color:rgba(74,163,255,.3); }
+        .btn-main:hover { transform:translateY(-2px); border-color:rgba(74,163,255,.6); box-shadow:0 4px 12px rgba(74,163,255,.15); }
+        .btn-clear { background:rgba(255,255,255,.06); }
+        .btn-clear:hover { background:rgba(255,255,255,.1); }
+        .btn-excel { background:rgba(255,255,255,.05); border-color:var(--line); color:var(--text); width:100%; font-size:15px; padding:14px; }
+        .btn-excel:hover { background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.3); transform:translateY(-2px); }
+
+        .error-msg {
+            background:var(--danger-bg); color:var(--danger); padding:12px; border-radius:10px;
+            margin-bottom:14px; display:none; font-size:13px; border:1px solid rgba(255,80,80,.18);
+        }
+        #loading-indicator { display:none; color:var(--blue); font-size:14px; font-weight:600; margin-left:auto; }
+        #found-badge {
+            display:none; background:rgba(74,163,255,.12); color:var(--blue);
+            border:1px solid rgba(74,163,255,.3); border-radius:8px;
+            padding:8px 14px; font-size:13px; font-weight:600; margin-top:14px;
+        }
+        #progress-wrap { display:none; margin-top:14px; }
+        #progress-label { font-size:12px; color:var(--muted); display:block; margin-bottom:6px; }
+        #progress-track { background:rgba(255,255,255,.07); border-radius:8px; overflow:hidden; height:8px; }
+        #progress-bar { height:100%; width:0%; background:var(--blue); border-radius:8px; transition:width .3s ease; }
+
+        .split-layout { display:flex; gap:20px; align-items:flex-start; }
+        .col-left { flex:2; border-right:1px solid var(--line); padding-right:20px; }
+        .col-right { flex:1; }
+
+        textarea.filter-box {
+            width:100%; min-height:220px; resize:vertical; padding:12px;
+            border-radius:12px; border:1px solid var(--line); background:rgba(0,0,0,.18);
+            color:var(--text); outline:none; font-size:13.5px; line-height:1.5; font-family:inherit;
+        }
+        textarea.filter-box:focus { border-color:var(--blue); }
+
+        #visual-area { max-height:550px; overflow-y:auto; padding-right:10px; }
+        #visual-area::-webkit-scrollbar { width:6px; }
+        #visual-area::-webkit-scrollbar-thumb { background:rgba(255,255,255,.1); border-radius:4px; }
+
+        .person-block {
+            margin-bottom:24px; border:1px solid var(--line);
+            border-radius:12px; background:rgba(0,0,0,.15); overflow:hidden;
+        }
+        .person-title {
+            background:rgba(255,255,255,.05); padding:12px 14px; font-weight:700;
+            font-size:14px; border-bottom:1px solid var(--line); color:var(--blue);
+        }
+        .tbl { width:100%; border-collapse:collapse; font-size:12px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+        .tbl th { background:rgba(0,0,0,.2); color:var(--muted); font-weight:600; text-align:left; padding:8px 12px; border-bottom:1px solid var(--line); }
+        .tbl td { padding:6px 12px; border-bottom:1px solid rgba(255,255,255,.04); }
+        .tbl tr:last-child td { border-bottom:none; }
+        .empty-day { color:rgba(255,255,255,.2); font-style:italic; }
+        .nocturnal { color:#93c5fd; }
+
+        @media(max-width:768px) {
+            .split-layout { flex-direction:column; }
+            .col-left { border-right:none; padding-right:0; border-bottom:1px solid var(--line); padding-bottom:20px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>Extrator de Espelho de Ponto - Ativa Logistica</h1>
+        <div class="sub"></div>
+    </header>
+
+    <div class="card">
+        <div class="section">
+            <div id="error-box" class="error-msg"></div>
+            <label>1. Carregue os PDFs do espelho de ponto:</label>
+            <div class="upload-area">
+                <span class="upload-text">📂 Selecione os PDFs</span>
+                <span class="upload-subtext">Múltiplos arquivos permitidos</span>
+                <input type="file" id="pdf-upload" accept="application/pdf" multiple onchange="updateFileList()" />
+            </div>
+            <div id="file-info" style="margin-top:10px;font-size:13px;color:var(--muted);"></div>
+            <div class="row">
+                <button class="btn-main" id="btn-process" onclick="processPDFs()">Analisar e Extrair</button>
+                <button class="btn-clear" onclick="clearData()">Limpar Tudo</button>
+                <span id="loading-indicator">Processando... aguarde.</span>
+            </div>
+            <div id="found-badge"></div>
+            <div id="progress-wrap">
+                <span id="progress-label">Processando...</span>
+                <div id="progress-track">
+                    <div id="progress-bar"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" id="processing-area" style="display:none;">
+        <div class="section split-layout">
+            <div class="col-left">
+                <label>2. Visualização das Batidas Extraídas:</label>
+                <p style="font-size:12px;color:var(--muted);margin-top:-6px;margin-bottom:16px;">
+                    Apenas funcionários da lista interna.
+                </p>
+                <div id="visual-area"></div>
+            </div>
+            <div class="col-right">
+                <label>3. Gerar Excel:</label>
+                <p style="font-size:12px;color:var(--muted);margin-top:-6px;margin-bottom:16px;">
+                    Lista preenchida automaticamente. Remova nomes para excluir do Excel.
+                </p>
+                <textarea id="names-list" class="filter-box"></textarea>
+                <button class="btn-excel" style="margin-top:16px;" onclick="generateExcel()">Exportar para Excel (.xlsx)</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────
+// LISTA INTERNA DE FUNCIONÁRIOS
+// ─────────────────────────────────────────────────────────────
+const EMPLOYEE_LIST = [
+    "ADAO JOSE MARIA","ADRIANO DOS SANTOS","ADEMILSON SANTOS","ADEMIR APARECIDO HONORATO",
+    "ADRIANO TADEU DOS REIS DEL CAMPO","ALAN LIMA CERQUEIRA","ALBERTO DE JESUS",
+    "ALEF PEREIRA DA SILVA","ALEX BARBOSA MATIAS","ALEX DE SOUSA","ALISSON OLIVEIRA DO VALE",
+    "ALYSSON APARECIDO DA SILVA GARCIA","AMANDA DA SILVA SANTOS","ANDERSON FRANCISCO DA SILVA",
+    "ANDERSON MANOEL PEREIRA DOS SANTOS","ANDERSON PARRA GONCALVES DE LUNA",
+    "ANDERSON ROBERTO AGUERO","ANDERSON SOUZA DE ALMEIDA","ANDRE FERREIRA DOS SANTOS",
+    "ANTONIO CARLOS DE BRITO VENTURA","ANTONIO MOREIRA DE ALMEIDA","ANTONIO NETO DA SILVA",
+    "ANTONIO ROMARIO DE CASTRO SOUSA","ARTHUR GLAUCO DA SILVA SIQUEIRA",
+    "BARBARA ELISABETH DOS SANTOS MALHEIROS","BEATRIZ GISELE DA SILVA","BRUNA DOS SANTOS SILVA",
+    "BRUNO ALVES SILVA","BRUNO LUIZ ESTEVAM MARQUES","BRYAN ELIEZER OLIVEIRA BAUS",
+    "CAIO CESAR DA SILVA SANTOS","CAIO VINICIUS VAROLLO","CAMILA PENICHE DE FRANCA",
+    "CARLOS AUGUSTO DOS SANTOS LEITE","CARLOS EDUARDO DA SILVA RAUL",
+    "CARLOS HENRIQUE DOS SANTOS GONZAGA","CARLOS LIMA MARREIRA",
+    "CARLOS LUCIANO MARQUES DE JESUS","CELSO DOS SANTOS SOUSA","CICERO ADOLFO QUEIROZ LOPES",
+    "CLAUDIO MACEDO DA SILVA","CLEBER ANDERSON BRANCO","CLEITON APARECIDO SANTOS FIDELIS",
+    "DANIELA SANTOS CAVALCANTE","DANILO APARECIDO DA SILVA SANTANA","DAYONE DA SILVA",
+    "DEUCLECIANO ROCHA","DEVID CAMPELO DOS SANTOS","DIEGO HENRIQUE MACIEL DE SOUZA",
+    "DIEGO PEREIRA DA SILVA","DIOGO ROSA FERREIRA","DOUGLAS BORSATO DE ARAUJO",
+    "DOUGLAS COUTINHO DE SOUZA","EDCARLOS DE JESUS DOREA","EDERSON IAGO ROSA REZENDE",
+    "EDIRLANDIO DE SOUZA SANTOS","EDMILSON JOSE DA SILVA","EDMIR PAULO SOARES",
+    "EDSON JOSE DA SILVA","EDSON JOSE DA SILVA JUNIOR","EDUARDO FERREIRA DE ARAUJO",
+    "EDUARDO HENRIQUE DE SOUZA","EDUARDO MACEDO BRANDAO","EDUARDO VIEIRA NASCIMENTO",
+    "EGIVALDO RAIMUNDO DOS SANTOS","ELMER FERREIRA NEVES","EMILY TOMAZ DE MACEDO",
+    "ERICK ANTUNES DE DEUS","ERICK RODRIGUES CRUZ","ESTHER SANTANA SILVA",
+    "EZEQUIEL DOS SANTOS ALVES","FABIO FERNANDES TUMAZ","FELIPE JERONIMO DA SILVA",
+    "FERNANDA MARTINS FELIX","FRANCIMARIO DE SOUSA","FRANKLIN DA SILVA FELIPE",
+    "GERALDO ANDRADE DE SOUZA","GILSON MARQUES DA COSTA","GIOVANI DOS SANTOS DA SILVA",
+    "GUSTAVO FREITAS DA SILVA","GUSTAVO GOMES DA COSTA","GUSTAVO OLIVEIRA DA SILVA",
+    "GUSTAVO SILVA DOS SANTOS","IGOR MARIANO DA SILVA","JAIRO DE DEUS JESUS",
+    "JEANNE WINNIE DA SILVA FRANCISCO","JOAO HENRIQUE KEWAMIM SANTOS CLEMENTE",
+    "JOAO VICTOR OLIVEIRA DA COSTA","JOAO VICTOR SANTANA DE SOUZA",
+    "JOAO VICTOR SILVA BRANDAO","JOAQUIM PEREIRA DA SILVA JUNIOR",
+    "JONATHAN CARVALHO BISPO","JORGE LOBATO DOS SANTOS","JOSE CARDOSO DA SILVA",
+    "JOSE CARLOS DOS SANTOS JUNIOR","JOSE CONCEICAO DE ARAUJO",
+    "JOSE JEOVANE BEZERRA DE FREITAS","JOSE MARCOS DE JESUS","JOSE ORLANDO DE SOUSA JUNIOR",
+    "JOSE ROBERTO DE OLIVEIRA","JOSENETE ALVES","JULIO CESAR AFFONSO CAMPOS",
+    "KAIQUE ANDRADE DA SILVA","KALINE MARIANA OLIVEIRA RODRIGUES","LEANDRO DE OLIVEIRA",
+    "LEANDRO DOS SANTOS GOMES","LEONARDO APARECIDO DOS SANTOS","LEONARIO ALVES DOS SANTOS",
+    "LINDOMAR OLIVEIRA NASCIMENTO","LUCAS DA SILVA","LUCAS DE OLIVEIRA PEREIRA DOS SANTOS",
+    "LUCAS HENRIQUE DE LIMA SANTOS","LUIS ANTONIO ANTUNES DOS SANTOS",
+    "LUIS GUSTAVO DA SILVA LIMA","LUIS MENDES DE OLIVEIRA","LUIZ ANTONIO DE SOUZA JUNIOR",
+    "LUIZ FERNANDO DA COSTA ANTUNES MACIEL","LUIZ HENRIQUE JESUS REZENDE",
+    "LUIZITO GOMES DA SILVA","LYZANDRO ARAUJO DA SILVA","MARCIO OLIVEIRA DAMACENO SANTOS",
+    "MARCIO PAULO DOS SANTOS UCHOA","MARCIO PIRES MACIEL","MARCOS MARTINS DOS SANTOS",
+    "MARCOS ROGERIO PONTES DE MORAES JUNIOR","MATEUS PEREIRA DO NASCIMENTO",
+    "MATHEUS DA SILVA SANTOS","MATHEUS DE LIMA SILVA","MATHEUS HENRIQUE ROGERIO DOS SANTOS",
+    "MAURICIO SILVA DE OLIVEIRA","MAURILES CARVALHO SOUZA","MAXUEL LOPES DELMONDES",
+    "MICHAEL DOUGLAS BATISTA DA SILVA","MIGUEL LUIZ DA SILVA","MOISES CLAUDIO DOS SANTOS",
+    "NATAN ARLEN SEVERO","PABLO GABRIEL ALONSO DE OLIVEIRA","PABLO MATHEUS FRANKLIN DA SILVA",
+    "PAMELA QUEIROZ SPINOLA","PATRICIO CALIXTO DE JESUS","PATRICK TRINDADE DE SOUSA",
+    "PAULO SILVA DE MENEZES","PAULO VICTOR ALVES CAFE","PEDRO HENRIK LOPES DA COSTA",
+    "RAFAEL DIAS BATISTA","RAI NUNES DE MORAIS","REGINALDO BATISTA TIBES",
+    "RENAN CAPRAN DOS SANTOS","RENAN DE SOUZA GUIMARAES","RHUAN ALVES CAIRES",
+    "RICARDO BOLDRINI GRUNDNER FILHO","RICARDO DA SILVA SANTOS","RICARDO FRANCO DA ROCHA",
+    "RICARDO SANTIAGO FARIAS","ROBERTO DE LOURDES","RODRIGO OLIVEIRA DA SILVA",
+    "RONALDO JOSE DA SILVA","RONIL RIBEIRO DOS SANTOS","RUAN HENRIQUE NASCIMENTO SANTOS",
+    "RUDSON BORGES DOS SANTOS","RYAN EDUARDO NASCIMENTO SANTOS","SIBELE DOS SANTOS SALES",
+    "SIMONY ANDREZA DA SILVA LEITE","SUELLEN DE OLIVEIRA CRUZ SANTOS","THALES ARAUJO CRUZ",
+    "TIAGO HENRIQUE ALVES","VALESCA RODRIGUES DA SILVA","VALTER ANTONIO FERREIRA",
+    "VICTOR CARVALHO DA SILVA","VINICIUS ALFREDO DO CARMO MATHEUS",
+    "VINICIUS DA SILVA OLIVEIRA QUEIROZ","VITOR HUGO SEBASTIAO SOBRINHO",
+    "WAGNER BOGGI DE QUEIROZ","WANDERSON JONATA SILVA","WELLINGTON DOS REIS VIEIRA",
+    "WESLEY MORAIS SANTOS","WILLIAM DE CARVALHO","WILSON JOSE DA SILVA",
+    "YURI GONCALVES FERREIRA"
+].map(n => n.toUpperCase().trim());
+
+// ─────────────────────────────────────────────────────────────
+// SENTINELAS DE FIM DE CARTÃO
+// ─────────────────────────────────────────────────────────────
+const END_MARKERS = [
+    /Saldo\s+do\s+Per[ií]odo/i,
+    /Saldo\s+de\s+Horas/i,
+    /Distribui[çc][aã]o\s+das\s+horas/i,
+    /Eventos\s+do\s+Movimento/i,
+    /Hor[áa]rio\s+do\s+Funcion[aá]rio/i,
+    /Chefia\s+Imediata/i,
+    /Reconhe[çc]o\s+a\s+exatid[aã]o/i,
+];
+
+// ─────────────────────────────────────────────────────────────
+// HELPERS DE TEMPO
+// ─────────────────────────────────────────────────────────────
+function toMin(hhmm) {
+    if (!hhmm) return 0;
+    const [h, m] = hhmm.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+}
+
+function fromMin(mins) {
+    return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+}
+
+// Aplica 24h+ para turnos noturnos
+function nocturnalFmt(times) {
+    if (!times.length) return times;
+    let out = [], offset = 0, prev = -1;
+    for (const t of times) {
+        let m = toMin(t) + offset;
+        if (prev !== -1 && m < prev) { offset += 1440; m += 1440; }
+        prev = m;
+        out.push(fromMin(m));
+    }
+    return out;
+}
+
+// ─────────────────────────────────────────────────────────────
+// MATCH COM LISTA INTERNA
+// ─────────────────────────────────────────────────────────────
+function matchInList(name) {
+    const up = name.toUpperCase().trim();
+    return EMPLOYEE_LIST.find(l => l === up || up.includes(l) || l.includes(up)) || null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// VALIDAÇÃO DE NOME
+// ─────────────────────────────────────────────────────────────
+const CARGO_RE = /\b(AJUDANTE\s+GERAL|CONFERENTE\s+JR|CONFERENTE|MOTORISTA\s+CARRETEIRO|MOTORISTA|OP\s+P\.A|COLETA\s+EXTERNO|ITROP|SAO\s+OP|SAO|ASSIST\s+TRANSPORTE|ASSIST|TRANSPORTE|AUXILIAR|AUX|CARRETEIRO)\b/gi;
+const BL = new Set([
+    "ATIVA","DISTRIBUICAO","CNPJ","SALVADOR","RODRIGUES","PRADO","DATA","SAIL","TRAB","EXEC",
+    "AUT","ATRASO","FALTA","ABONO","CHAPA","CARTEIRA","FUNÇÃO","FUNCAO","CARGO","QUANTIDADE",
+    "HORAS","CARTÃO","CARTAO","PONTO","EMISSÃO","EMISSAO","SEÇÃO","SECAO","LTDA","LOGISTICA",
+    "EMPREGADO","RESUMO","MENSAL","MARCAÇÕES","ENT1","SAI1","ENT2","SAI2","ENT3","SAI3",
+    "ENT4","SAI4","ENTL","COMPENSAR","SALDO","PERIODO","PERÍODO","ANTERIOR","ATUAL","EXTRAS",
+    "PAGAS","EVENTOS","MOVIMENTO","HORARIO","HORÁRIO","FUNCIONARIO","FUNCIONÁRIO","CHEFIA",
+    "IMEDIATA","PAGINA","PÁGINA","RECONHEÇO","EXATIDÃO","CONFIRMO","FREQUÊNCIA","CONSTANTE",
+    "DESTE","DEMITIDO","DEMITIDOS","ATESTADO","MEDICO","DECLARAÇÃO","SEGURO","FERIAS","FÉRIAS",
+    "AFASTADO","AFASTAMENTO","SEGUNDA","TERCA","QUARTA","QUINTA","SEXTA","SABADO","DOMINGO",
+    "JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO",
+    "OUTUBRO","NOVEMBRO","DEZEMBRO"
+]);
+
+function isValidName(str) {
+    let c = str.replace(CARGO_RE, '').trim()
+               .replace(/[0-9.:\-\/\|\\@#%&*()_+=\[\]{}<>]/g, '').trim()
+               .replace(/\s{2,}/g, ' ').trim();
+    const w = c.split(/\s+/).filter(x => x.length > 1);
+    if (w.length < 2) return null;
+    if (!w.every(x => x === x.toUpperCase() && /[A-ZÁÉÍÓÚÃÕÂÊÎÔÛÀÈÌÒÙÇ]/.test(x))) return null;
+    if (w.some(x => BL.has(x.toUpperCase()))) return null;
+    if (!w.some(x => x.length >= 3)) return null;
+    return c;
+}
+
+// ─────────────────────────────────────────────────────────────
+// ESTADO GLOBAL
+// ─────────────────────────────────────────────────────────────
+let globalEmployees = [];
+let globalFileName  = 'Cartões de ponto.xlsx';
+
+// ─────────────────────────────────────────────────────────────
+// UI
+// ─────────────────────────────────────────────────────────────
+function updateFileList() {
+    const f = document.getElementById('pdf-upload').files;
+    const i = document.getElementById('file-info');
+    i.textContent = !f.length
+        ? ''
+        : f.length === 1
+            ? `✓ 1 arquivo: ${f[0].name}`
+            : `✓ ${f.length} arquivos selecionados`;
+}
+
+function clearData() {
+    document.getElementById('pdf-upload').value            = '';
+    document.getElementById('file-info').textContent       = '';
+    document.getElementById('processing-area').style.display = 'none';
+    document.getElementById('error-box').style.display     = 'none';
+    document.getElementById('found-badge').style.display   = 'none';
+    document.getElementById('progress-wrap').style.display = 'none';
+    globalEmployees = [];
+    globalFileName  = 'Cartões de ponto.xlsx';
+}
+
+function showError(msg) {
+    const b = document.getElementById('error-box');
+    b.innerText = msg;
+    b.style.display = 'block';
+}
+
+// ─────────────────────────────────────────────────────────────
+// LEITURA DO PDF — retorna estrutura por página com coordenadas
+// ─────────────────────────────────────────────────────────────
+async function extractPDFData(file) {
+    const pdf   = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const pages = [];
+
+    for (let p = 1; p <= pdf.numPages; p++) {
+        const page    = await pdf.getPage(p);
+        const content = await page.getTextContent();
+
+        const lineMap = new Map();
+        for (const item of content.items) {
+            const y = Math.round(item.transform[5]);
+            const x = Math.round(item.transform[4]);
+            const s = item.str.trim();
+            if (!s) continue;
+
+            let key = null;
+            for (const k of lineMap.keys()) {
+                if (Math.abs(k - y) <= 4) { key = k; break; }
+            }
+            if (key === null) { key = y; lineMap.set(key, []); }
+            lineMap.get(key).push({ x, s });
+        }
+
+        const lines = [...lineMap.entries()]
+            .sort((a, b) => b[0] - a[0])
+            .map(([y, items]) => ({
+                y,
+                items: items.sort((a, b) => a.x - b.x)
+            }));
+
+        pages.push(lines);
+    }
+    return pages;
+}
+
+// ─────────────────────────────────────────────────────────────
+// DETECÇÃO DE LIMITE DE COLUNA
+// ─────────────────────────────────────────────────────────────
+function detectColumnBoundary(lines) {
+    for (const line of lines) {
+        const text = line.items.map(i => i.s).join(' ');
+        if (/\bEnt[1-4]\b/i.test(text) || /\bSai[1-4]\b/i.test(text)) {
+            const pipeItem = line.items.find(i => i.s === '|');
+            const trabItem = line.items.find(i => /^Trab$/i.test(i.s));
+            const boundary = pipeItem?.x ?? trabItem?.x ?? null;
+            if (boundary) return boundary;
+
+            const saiItems = line.items.filter(i => /^Sai\d$/i.test(i.s));
+            if (saiItems.length) return saiItems[saiItems.length - 1].x + 60;
+        }
+    }
+    return null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// PROCESSAMENTO POR PÁGINA COM AGRUPAMENTO DE LINHAS (DRIFT)
+// ─────────────────────────────────────────────────────────────
+function processPage(lines) {
+    const xBoundary = detectColumnBoundary(lines);
+    const records   = [];
+
+    let currentDayItems = [];
+    let currentDate = null;
+    let currentDayStr = '';
+    let inBody = false;
+
+    function finalizeDay() {
+        if (currentDate && currentDayItems.length > 0) {
+            // Reordena todos os itens agrupados horizontalmente
+            currentDayItems.sort((a, b) => a.x - b.x);
+
+            // Filtra os itens ignorando atrasos/horas extras (depois do limite)
+            const validItems = xBoundary !== null
+                ? currentDayItems.filter(i => i.x < xBoundary)
+                : currentDayItems;
+
+            // Junta tudo num texto só para evitar cortes do PDF (ex: '23:' e '59')
+            const text = validItems.map(i => i.s).join(' ');
+
+            // Procura todos os horários (com ou sem '+')
+            const rawTimesMatches = text.match(/\+?(?:[01]\d|2[0-3]):[0-5]\d/g) || [];
+
+            // Limpa os sinais de '+'
+            let cleanTimes = rawTimesMatches.map(t => t.replace('+', ''));
+
+            // Se for ímpar e não houver limite seguro, apara a última (Total)
+            if (xBoundary === null && cleanTimes.length % 2 !== 0 && cleanTimes.length > 0) {
+                cleanTimes = cleanTimes.slice(0, -1);
+            }
+
+            const times = nocturnalFmt(cleanTimes.slice(0, 4));
+            records.push({ date: currentDate, day: currentDayStr, times });
+        }
+        
+        currentDayItems = [];
+        currentDate = null;
+        currentDayStr = '';
+    }
+
+    for (const line of lines) {
+        const fullText = line.items.map(i => i.s).join(' ');
+
+        if (/\bEnt1\b/i.test(fullText)) { inBody = true; continue; }
+        if (END_MARKERS.some(re => re.test(fullText))) { finalizeDay(); break; }
+        if (!inBody) continue;
+
+        // Captura Data no formato DD/MM/AAAA (garantido com \b)
+        const dateMatch = fullText.match(/\b\d{2}\/\d{2}\/\d{4}\b/);
+
+        if (dateMatch) {
+            finalizeDay();
+            currentDate = dateMatch[0];
+            const dayMatch = fullText.match(/\b(SEG|TER|QUA|QUI|SEX|SAB|DOM)\b/i);
+            currentDayStr = dayMatch ? dayMatch[1].toUpperCase() : '';
+            currentDayItems.push(...line.items);
+        } else if (currentDate) {
+            // Se quebrou de linha, anexa os itens à data atual
+            currentDayItems.push(...line.items);
+        }
+    }
+    finalizeDay(); // Salva o último dia
+
+    return records;
+}
+
+// ─────────────────────────────────────────────────────────────
+// BUSCA DE NOME NA PÁGINA
+// ─────────────────────────────────────────────────────────────
+function findNameInLines(lines) {
+    for (let i = 0; i < lines.length; i++) {
+        const text = lines[i].items.map(x => x.s).join(' ');
+        if (/nome\s+do\s+funcion[aá]rio/i.test(text)) {
+            for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+                const candidate = lines[j].items.map(x => x.s).join(' ');
+                const valid = isValidName(candidate);
+                if (valid) return valid;
+            }
+        }
+    }
+    for (let i = 0; i < Math.min(lines.length, 60); i++) {
+        const valid = isValidName(lines[i].items.map(x => x.s).join(' '));
+        if (valid) return valid;
+    }
+    return null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// PIPELINE PRINCIPAL
+// ─────────────────────────────────────────────────────────────
+async function processPDFs() {
+    const fileInput  = document.getElementById('pdf-upload');
+    const btnProcess = document.getElementById('btn-process');
+    const loading    = document.getElementById('loading-indicator');
+    const wrap       = document.getElementById('progress-wrap');
+    const bar        = document.getElementById('progress-bar');
+    const label      = document.getElementById('progress-label');
+
+    document.getElementById('error-box').style.display        = 'none';
+    document.getElementById('processing-area').style.display  = 'none';
+    document.getElementById('found-badge').style.display      = 'none';
+    globalEmployees = [];
+
+    if (!fileInput.files.length) { showError('Selecione pelo menos um PDF.'); return; }
+
+    btnProcess.disabled   = true;
+    loading.style.display = 'inline-block';
+    wrap.style.display    = 'block';
+    bar.style.width       = '0%';
+
+    try {
+        let monthDetected = false;
+        const files = [...fileInput.files];
+        const total = files.length;
+
+        for (let fi = 0; fi < total; fi++) {
+            const file = files[fi];
+            label.textContent = `Lendo arquivo ${fi + 1} de ${total}: ${file.name}`;
+            bar.style.width   = `${Math.round((fi / total) * 80)}%`;
+
+            const pages = await extractPDFData(file);
+
+            if (!monthDetected) {
+                const allText = pages
+                    .flatMap(p => p)
+                    .map(l => l.items.map(i => i.s).join(' '))
+                    .join('\n');
+                const mm = allText.match(/Emiss[ãa]o:\s*([A-Za-zçÇ]+\/\d{4})/i);
+                if (mm) {
+                    globalFileName = `Cartões de ponto - ${mm[1].replace('/', '-')}.xlsx`;
+                    monthDetected  = true;
+                }
+            }
+
+            for (const lines of pages) {
+                const rawName = findNameInLines(lines);
+                if (!rawName) continue;
+
+                const listed = matchInList(rawName);
+                if (!listed) continue;
+
+                const records = processPage(lines);
+                if (!records.length) continue;
+
+                mergeEmployee(listed, records);
+            }
+        }
+
+        label.textContent = 'Finalizando...';
+        bar.style.width   = '100%';
+        await new Promise(r => setTimeout(r, 400));
+
+        if (!globalEmployees.length) {
+            showError('Nenhum funcionário da lista interna foi encontrado nos PDFs.');
+            return;
+        }
+
+        globalEmployees.sort((a, b) => a.name.localeCompare(b.name));
+        renderVisuals();
+        document.getElementById('processing-area').style.display = 'block';
+
+        const badge       = document.getElementById('found-badge');
+        badge.textContent = `✓ ${globalEmployees.length} funcionário(s) encontrado(s) nos PDFs.`;
+        badge.style.display = 'block';
+
+    } catch (e) {
+        console.error(e);
+        // Exibe o erro exato na tela em vez de um texto genérico
+        showError('Erro ao processar arquivo: ' + (e.message || 'Verifique se não está protegido ou corrompido.'));
+    } finally {
+        btnProcess.disabled   = false;
+        loading.style.display = 'none';
+        wrap.style.display    = 'none';
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// MERGE
+// ─────────────────────────────────────────────────────────────
+function mergeEmployee(name, records) {
+    const sortFn = (a, b) => {
+        const [da, ma, ya] = a.date.split('/');
+        const [db, mb, yb] = b.date.split('/');
+        return new Date(ya, ma - 1, da) - new Date(yb, mb - 1, db);
+    };
+
+    const idx = globalEmployees.findIndex(e => e.name === name);
+    if (idx === -1) {
+        globalEmployees.push({ name, records: records.sort(sortFn) });
+        return;
+    }
+    const ex = globalEmployees[idx];
+    for (const r of records) {
+        const found = ex.records.find(er => er.date === r.date);
+        if (!found) {
+            ex.records.push(r);
+        } else if (r.times.length > found.times.length) {
+            found.times = r.times;
+            if (!found.day && r.day) found.day = r.day;
+        }
+    }
+    ex.records.sort(sortFn);
+}
+
+// ─────────────────────────────────────────────────────────────
+// RENDERIZAÇÃO
+// ─────────────────────────────────────────────────────────────
+function renderVisuals() {
+    let html = '';
+    for (const emp of globalEmployees) {
+        html += `<div class="person-block">
+            <div class="person-title">${emp.name}</div>
+            <table class="tbl">
+                <thead>
+                    <tr><th>Data</th><th>Dia</th><th>E1</th><th>S1</th><th>E2</th><th>S2</th></tr>
+                </thead>
+                <tbody>`;
+        for (const r of emp.records) {
+            const t   = r.times;
+            const fmt = v => v ? (parseInt(v) >= 24 ? `<span class="nocturnal">${v}</span>` : v) : '-';
+            if (!t.length) {
+                html += `<tr>
+                    <td>${r.date}</td><td>${r.day}</td>
+                    <td colspan="4" class="empty-day">Sem batidas</td>
+                </tr>`;
+            } else {
+                html += `<tr>
+                    <td>${r.date}</td><td>${r.day}</td>
+                    <td>${fmt(t[0])}</td><td>${fmt(t[1])}</td>
+                    <td>${fmt(t[2])}</td><td>${fmt(t[3])}</td>
+                </tr>`;
+            }
+        }
+        html += `</tbody></table></div>`;
+    }
+    document.getElementById('visual-area').innerHTML = html;
+    document.getElementById('names-list').value = globalEmployees.map(e => e.name).join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────
+// EXPORTAÇÃO EXCEL
+// ─────────────────────────────────────────────────────────────
+function generateExcel() {
+    const filter = document.getElementById('names-list').value.trim();
+    if (!filter) { alert('A caixa de nomes está vazia.'); return; }
+
+    const targets = filter.split('\n').map(n => n.trim().toUpperCase()).filter(n => n);
+    const sel     = globalEmployees.filter(emp => {
+        const up = emp.name.toUpperCase();
+        return targets.some(t => up.includes(t) || t.includes(up));
+    });
+    if (!sel.length) { alert('Nenhum funcionário encontrado. Verifique os nomes.'); return; }
+
+    const wb = XLSX.utils.book_new();
+    for (const emp of sel) {
+        const ws = XLSX.utils.aoa_to_sheet([
+            ['Funcionário:', emp.name],
+            [],
+            ['Data', 'Dia', 'Ent1', 'Sai1', 'Ent2', 'Sai2'],
+            ...emp.records.map(r => [
+                r.date, r.day,
+                r.times[0] || '', r.times[1] || '',
+                r.times[2] || '', r.times[3] || ''
+            ])
+        ]);
+        ws['!cols'] = [{wch:12},{wch:6},{wch:8},{wch:8},{wch:8},{wch:8}];
+        let sn = emp.name.replace(/[\\\/\?\*\[\]]/g, '').substring(0, 31);
+        if (wb.SheetNames.includes(sn)) sn = sn.substring(0, 27) + '_' + Math.floor(Math.random() * 100);
+        XLSX.utils.book_append_sheet(wb, ws, sn);
+    }
+    XLSX.writeFile(wb, globalFileName);
+}
+</script>
+</body>
+</html>

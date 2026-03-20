@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Processador de Ponto - Busca Focada</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    </script>
+
+    <style>
+        :root {
+            --bg:#0b1220; --card:#0f1a2e; --muted:#8aa0c2; --text:#e7eefc;
+            --line:rgba(255,255,255,.10); --blue:#4aa3ff;
+            --danger-bg:rgba(255,80,80,.10); --danger:#fecdd3;
+        }
+        * { box-sizing:border-box; }
+        body {
+            margin:0;
+            font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+            background:
+                radial-gradient(1200px 800px at 20% -10%,rgba(74,163,255,.20),transparent 60%),
+                radial-gradient(900px 700px at 110% 10%,rgba(43,107,255,.16),transparent 55%),
+                var(--bg);
+            color:var(--text);
+            padding:28px 18px 48px;
+        }
+        .container { width:100%; max-width:1000px; margin:0 auto; }
+        header { margin-bottom:18px; text-align:center; }
+        h1 { margin:0; font-size:24px; letter-spacing:.2px; }
+        .sub { color:var(--muted); font-size:14px; line-height:1.4; margin-top:6px; }
+
+        .card {
+            background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.03));
+            border:1px solid var(--line); border-radius:16px; overflow:hidden;
+            box-shadow:0 10px 30px rgba(0,0,0,.25); margin-bottom:24px;
+        }
+        .section { padding:24px; border-top:1px solid var(--line); }
+        .section:first-child { border-top:none; }
+        label { display:block; color:var(--blue); font-size:14px; margin:0 0 10px; font-weight:600; }
+
+        textarea.filter-box {
+            width:100%; resize:vertical; padding:14px;
+            border-radius:12px; border:1px solid var(--line); background:rgba(0,0,0,.18);
+            color:var(--text); outline:none; font-size:13.5px; line-height:1.5; font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+            transition: border-color 0.2s;
+        }
+        textarea.filter-box:focus { border-color:var(--blue); }
+
+        .upload-area {
+            display:flex; flex-direction:column; align-items:center; justify-content:center;
+            gap:10px; width:100%; border:2px dashed rgba(74,163,255,.4);
+            border-radius:12px; padding:30px; background:rgba(0,0,0,.18); transition:.3s; cursor:pointer;
+        }
+        .upload-area:hover { border-color:var(--blue); background:rgba(74,163,255,.05); }
+        .upload-area input[type="file"] {
+            font-size:13px; color:var(--muted); cursor:pointer;
+            background:transparent; border:none; outline:none; width:100%; text-align:center;
+        }
+        .upload-area input[type="file"]::file-selector-button {
+            background:rgba(74,163,255,.15); color:var(--blue);
+            border:1px solid rgba(74,163,255,.4); border-radius:8px;
+            padding:6px 14px; cursor:pointer; font-weight:600; font-size:13px;
+            transition:.2s; margin-right:10px;
+        }
+        .upload-area input[type="file"]::file-selector-button:hover { background:rgba(74,163,255,.3); }
+        .upload-text { color:var(--text); font-weight:600; font-size:15px; }
+        .upload-subtext { color:var(--muted); font-size:12px; }
+
+        .row { display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap; margin-top:20px; }
+        button {
+            appearance:none; border:1px solid var(--line); color:var(--text);
+            padding:12px 20px; border-radius:12px; cursor:pointer; font-weight:600; transition:.2s; font-size:14px;
+        }
+        .btn-main { background:rgba(74,163,255,.12); color:var(--blue); border-color:rgba(74,163,255,.3); }
+        .btn-main:hover { transform:translateY(-2px); border-color:rgba(74,163,255,.6); box-shadow:0 4px 12px rgba(74,163,255,.15); }
+        .btn-main:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-clear { background:rgba(255,255,255,.06); }
+        .btn-clear:hover { background:rgba(255,255,255,.1); }
+        .btn-excel { background:rgba(255,255,255,.05); border-color:var(--line); color:var(--text); width:100%; font-size:15px; padding:14px; margin-top:16px; }
+        .btn-excel:hover { background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.3); transform:translateY(-2px); }
+
+        .error-msg {
+            background:var(--danger-bg); color:var(--danger); padding:12px 16px; border-radius:10px;
+            margin-bottom:20px; display:none; font-size:13px; border:1px solid rgba(255,80,80,.18); text-align:center;
+        }
+        #found-badge {
+            display:none; background:rgba(74,163,255,.12); color:var(--blue);
+            border:1px solid rgba(74,163,255,.3); border-radius:8px;
+            padding:10px 14px; font-size:14px; font-weight:600; margin-top:20px; text-align:center;
+        }
+        
+        #progress-wrap { display:none; margin-top:20px; }
+        #progress-label { font-size:13px; color:var(--muted); display:block; margin-bottom:8px; text-align:center; }
+        #progress-track { background:rgba(255,255,255,.07); border-radius:8px; overflow:hidden; height:10px; }
+        #progress-bar { height:100%; width:0%; background:var(--blue); border-radius:8px; transition:width .3s ease; }
+
+        .split-layout { display:flex; gap:24px; align-items:flex-start; }
+        .col-left { flex:2; border-right:1px solid var(--line); padding-right:24px; }
+        .col-right { flex:1; }
+
+        #visual-area { max-height:550px; overflow-y:auto; padding-right:10px; }
+        #visual-area::-webkit-scrollbar { width:6px; }
+        #visual-area::-webkit-scrollbar-thumb { background:rgba(255,255,255,.1); border-radius:4px; }
+
+        .person-block {
+            margin-bottom:24px; border:1px solid var(--line);
+            border-radius:12px; background:rgba(0,0,0,.15); overflow:hidden;
+        }
+        .person-title {
+            background:rgba(255,255,255,.05); padding:12px 14px; font-weight:700;
+            font-size:14px; border-bottom:1px solid var(--line); color:var(--blue);
+        }
+        .tbl { width:100%; border-collapse:collapse; font-size:12px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+        .tbl th { background:rgba(0,0,0,.2); color:var(--muted); font-weight:600; text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); }
+        .tbl td { padding:8px 12px; border-bottom:1px solid rgba(255,255,255,.04); }
+        .tbl tr:last-child td { border-bottom:none; }
+        .empty-day { color:rgba(255,255,255,.2); font-style:italic; }
+        .nocturnal { color:#93c5fd; }
+
+        @media(max-width:768px) {
+            .split-layout { flex-direction:column; }
+            .col-left { border-right:none; padding-right:0; border-bottom:1px solid var(--line); padding-bottom:20px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <h1>Processador de Espelho de Ponto - Ativa Logistica</h1>
+        <div class="sub">Converte espelhos de ponto em PDF para Excel</div>
+    </header>
+
+    <div class="card">
+        <div class="section">
+            <div id="error-box" class="error-msg"></div>
+            
+            <label>1. Cole os nomes a serem extraídos (um por linha):</label>
+            <textarea id="target-names" class="filter-box" style="min-height: 120px; margin-bottom: 24px;" placeholder="Exemplo:&#10;ALESSANDRA APARECIDA GARCIA&#10;VLADIMIR PEREIRA DE SOUSA"></textarea>
+
+            <label>2. Carregue os PDFs do espelho de ponto:</label>
+            <div class="upload-area">
+                <span class="upload-text">📂 Selecione os PDFs</span>
+                <span class="upload-subtext">Múltiplos arquivos permitidos</span>
+                <input type="file" id="pdf-upload" accept="application/pdf" multiple onchange="updateFileList()" />
+            </div>
+            <div id="file-info" style="margin-top:10px;font-size:13px;color:var(--muted);text-align:center;"></div>
+            
+            <div class="row">
+                <button class="btn-main" id="btn-process" onclick="processPDFs()"> Processar</button>
+                <button class="btn-clear" onclick="clearData()">Limpar Tudo</button>
+            </div>
+            
+            <div id="progress-wrap">
+                <span id="progress-label">Processando...</span>
+                <div id="progress-track">
+                    <div id="progress-bar"></div>
+                </div>
+            </div>
+            
+            <div id="found-badge"></div>
+        </div>
+    </div>
+
+    <div class="card" id="processing-area" style="display:none;">
+        <div class="section split-layout">
+            <div class="col-left">
+                <label>3. Visualização das Batidas:</label>
+                <p style="font-size:12px;color:var(--muted);margin-top:-6px;margin-bottom:16px;">
+                    Horários <span class="nocturnal">azuis</span> = 24h+
+                </p>
+                <div id="visual-area"></div>
+            </div>
+            <div class="col-right">
+                <label>4. Gerar Excel:</label>
+                <p style="font-size:12px;color:var(--muted);margin-top:-6px;margin-bottom:16px;">
+                    Nomes encontrados. Remova da lista se desejar excluir algum do Excel.
+                </p>
+                <textarea id="names-list" class="filter-box" style="min-height:250px;"></textarea>
+                <button class="btn-excel" onclick="generateExcel()">📥 Exportar para Excel (.xlsx)</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let globalEmployees = [];
+let globalFileName = 'Cartoes_de_ponto_Focados.xlsx';
+
+const END_MARKERS = [
+    /Saldo\s+do\s+Per[ií]odo/i, /Saldo\s+de\s+Horas/i, /Distribui[çc][aã]o\s+das\s+horas/i,
+    /Eventos\s+do\s+Movimento/i, /Hor[áa]rio\s+do\s+Funcion[aá]rio/i, /Chefia\s+Imediata/i, /Reconhe[çc]o\s+a\s+exatid[aã]o/i,
+];
+
+function updateFileList() {
+    const f = document.getElementById('pdf-upload').files;
+    const i = document.getElementById('file-info');
+    i.textContent = !f.length ? '' : f.length === 1 ? `✓ 1 arquivo selecionado: ${f[0].name}` : `✓ ${f.length} arquivos selecionados`;
+}
+
+function clearData() {
+    document.getElementById('target-names').value = '';
+    document.getElementById('pdf-upload').value = '';
+    document.getElementById('file-info').textContent = '';
+    document.getElementById('processing-area').style.display = 'none';
+    document.getElementById('error-box').style.display = 'none';
+    document.getElementById('found-badge').style.display = 'none';
+    document.getElementById('progress-wrap').style.display = 'none';
+    globalEmployees = [];
+}
+
+function showError(msg) {
+    const b = document.getElementById('error-box');
+    b.innerText = msg;
+    b.style.display = 'block';
+}
+
+function toMin(hhmm) {
+    if (!hhmm) return 0;
+    const [h, m] = hhmm.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+}
+
+function fromMin(mins) {
+    return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+}
+
+function nocturnalFmt(times) {
+    if (!times.length) return times;
+    let out = [], offset = 0, prev = -1;
+    for (const t of times) {
+        let m = toMin(t) + offset;
+        if (prev !== -1 && m < prev) { offset += 1440; m += 1440; }
+        prev = m;
+        out.push(fromMin(m));
+    }
+    return out;
+}
+
+async function extractPDFData(file) {
+    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const pages = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+        const page = await pdf.getPage(p);
+        const content = await page.getTextContent();
+        const lineMap = new Map();
+        for (const item of content.items) {
+            const y = Math.round(item.transform[5]);
+            const x = Math.round(item.transform[4]);
+            const s = item.str.trim();
+            if (!s) continue;
+            let key = null;
+            for (const k of lineMap.keys()) {
+                if (Math.abs(k - y) <= 4) { key = k; break; }
+            }
+            if (key === null) { key = y; lineMap.set(key, []); }
+            lineMap.get(key).push({ x, s });
+        }
+        const lines = [...lineMap.entries()].sort((a, b) => b[0] - a[0]).map(([y, items]) => ({ y, items: items.sort((a, b) => a.x - b.x) }));
+        pages.push(lines);
+    }
+    return pages;
+}
+
+function detectColumnBoundary(lines) {
+    for (const line of lines) {
+        const text = line.items.map(i => i.s).join(' ');
+        if (/\bEnt[1-4]\b/i.test(text) || /\bSai[1-4]\b/i.test(text)) {
+            const pipeItem = line.items.find(i => i.s === '|');
+            const trabItem = line.items.find(i => /^Trab$/i.test(i.s));
+            if (pipeItem?.x ?? trabItem?.x) return pipeItem?.x ?? trabItem?.x;
+        }
+    }
+    return null;
+}
+
+function processPage(lines) {
+    const xBoundary = detectColumnBoundary(lines);
+    const records = [];
+    let currentDayItems = [], currentDate = null, currentDayStr = '', inBody = false;
+
+    function finalizeDay() {
+        if (currentDate && currentDayItems.length > 0) {
+            currentDayItems.sort((a, b) => a.x - b.x);
+            const validItems = xBoundary !== null ? currentDayItems.filter(i => i.x < xBoundary) : currentDayItems;
+            const text = validItems.map(i => i.s).join(' ');
+            const rawTimesMatches = text.match(/\+?(?:[01]\d|2[0-3]):[0-5]\d/g) || [];
+            let cleanTimes = rawTimesMatches.map(t => t.replace('+', ''));
+            if (xBoundary === null && cleanTimes.length % 2 !== 0 && cleanTimes.length > 0) cleanTimes = cleanTimes.slice(0, -1);
+            records.push({ date: currentDate, day: currentDayStr, times: nocturnalFmt(cleanTimes.slice(0, 4)) });
+        }
+        currentDayItems = []; currentDate = null; currentDayStr = '';
+    }
+
+    for (const line of lines) {
+        const fullText = line.items.map(i => i.s).join(' ');
+        if (/\bEnt1\b/i.test(fullText)) { inBody = true; continue; }
+        if (END_MARKERS.some(re => re.test(fullText))) { finalizeDay(); break; }
+        if (!inBody) continue;
+        
+        const dateMatch = fullText.match(/\b\d{2}\/\d{2}\/\d{4}\b/);
+        if (dateMatch) {
+            finalizeDay();
+            currentDate = dateMatch[0];
+            const dayMatch = fullText.match(/\b(SEG|TER|QUA|QUI|SEX|SAB|DOM)\b/i);
+            currentDayStr = dayMatch ? dayMatch[1].toUpperCase() : '';
+            currentDayItems.push(...line.items);
+        } else if (currentDate) {
+            currentDayItems.push(...line.items);
+        }
+    }
+    finalizeDay();
+    return records;
+}
+
+async function processPDFs() {
+    const fileInput = document.getElementById('pdf-upload');
+    const nameInput = document.getElementById('target-names').value;
+    const btnProcess = document.getElementById('btn-process');
+    const wrap = document.getElementById('progress-wrap');
+    const bar = document.getElementById('progress-bar');
+    const label = document.getElementById('progress-label');
+    
+    document.getElementById('error-box').style.display = 'none';
+    document.getElementById('found-badge').style.display = 'none';
+    document.getElementById('processing-area').style.display = 'none';
+    globalEmployees = [];
+
+    const targetNames = nameInput.split('\n')
+        .map(n => n.trim().toUpperCase())
+        .filter(n => n.length > 3);
+
+    if (targetNames.length === 0) {
+        showError('Cole pelo menos um nome na primeira caixa de texto antes de continuar.');
+        return;
+    }
+
+    if (!fileInput.files.length) { 
+        showError('Selecione pelo menos um PDF para realizar a extração.'); 
+        return; 
+    }
+
+    btnProcess.disabled = true;
+    wrap.style.display = 'block';
+    bar.style.width = '0%';
+
+    try {
+        let monthDetected = false;
+        const files = [...fileInput.files];
+        const total = files.length;
+
+        for (let fi = 0; fi < total; fi++) {
+            const file = files[fi];
+            label.textContent = `Lendo arquivo ${fi + 1} de ${total}: ${file.name}`;
+            bar.style.width = `${Math.round((fi / total) * 80)}%`;
+            
+            const pages = await extractPDFData(file);
+
+            if (!monthDetected) {
+                const allText = pages.flatMap(p => p).map(l => l.items.map(i => i.s).join(' ')).join('\n');
+                const mm = allText.match(/Emiss[ãa]o:\s*([A-Za-zçÇ]+\/\d{4})/i);
+                if (mm) { globalFileName = `Cartoes_de_ponto_Focados_${mm[1].replace('/', '-')}.xlsx`; monthDetected = true; }
+            }
+
+            for (const lines of pages) {
+                const topText = lines.slice(0, 40)
+                    .flatMap(l => l.items.map(i => i.s))
+                    .join(' ').toUpperCase().replace(/\s+/g, ' ');
+
+                let foundName = null;
+                for (const target of targetNames) {
+                    const cleanTarget = target.replace(/\s+/g, ' ');
+                    if (topText.includes(cleanTarget)) {
+                        foundName = target;
+                        break;
+                    }
+                }
+
+                if (foundName) {
+                    const records = processPage(lines);
+                    if (records.length > 0) {
+                        mergeEmployee(foundName, records);
+                    }
+                }
+            }
+        }
+
+        label.textContent = 'Finalizando...';
+        bar.style.width = '100%';
+        await new Promise(r => setTimeout(r, 400));
+
+        if (globalEmployees.length === 0) {
+            showError('Nenhum dos nomes colados foi encontrado nos PDFs. Verifique se estão digitados exatamente como no documento.');
+        } else {
+            globalEmployees.sort((a, b) => a.name.localeCompare(b.name));
+            renderVisuals();
+            document.getElementById('processing-area').style.display = 'block';
+            
+            const badge = document.getElementById('found-badge');
+            badge.textContent = `✓ ${globalEmployees.length} funcionário(s) encontrado(s) nos PDFs.`;
+            badge.style.display = 'block';
+        }
+    } catch (e) {
+        showError('Erro ao ler arquivo: ' + e.message);
+    } finally {
+        btnProcess.disabled = false;
+        wrap.style.display = 'none';
+    }
+}
+
+function mergeEmployee(name, records) {
+    const sortFn = (a, b) => {
+        const [da, ma, ya] = a.date.split('/'); const [db, mb, yb] = b.date.split('/');
+        return new Date(ya, ma - 1, da) - new Date(yb, mb - 1, db);
+    };
+    const idx = globalEmployees.findIndex(e => e.name === name);
+    if (idx === -1) { globalEmployees.push({ name, records: records.sort(sortFn) }); return; }
+    
+    const ex = globalEmployees[idx];
+    for (const r of records) {
+        const found = ex.records.find(er => er.date === r.date);
+        if (!found) { ex.records.push(r); } 
+        else if (r.times.length > found.times.length) { found.times = r.times; }
+    }
+    ex.records.sort(sortFn);
+}
+
+function renderVisuals() {
+    let html = '';
+    for (const emp of globalEmployees) {
+        html += `<div class="person-block">
+            <div class="person-title">${emp.name}</div>
+            <table class="tbl">
+                <thead><tr><th>Data</th><th>Dia</th><th>E1</th><th>S1</th><th>E2</th><th>S2</th></tr></thead>
+                <tbody>`;
+        for (const r of emp.records) {
+            const t = r.times;
+            const fmt = v => v ? (parseInt(v) >= 24 ? `<span class="nocturnal">${v}</span>` : v) : '-';
+            if (!t.length) { html += `<tr><td>${r.date}</td><td>${r.day}</td><td colspan="4" class="empty-day">Sem batidas</td></tr>`; } 
+            else { html += `<tr><td>${r.date}</td><td>${r.day}</td><td>${fmt(t[0])}</td><td>${fmt(t[1])}</td><td>${fmt(t[2])}</td><td>${fmt(t[3])}</td></tr>`; }
+        }
+        html += `</tbody></table></div>`;
+    }
+    document.getElementById('visual-area').innerHTML = html;
+    document.getElementById('names-list').value = globalEmployees.map(e => e.name).join('\n');
+}
+
+function generateExcel() {
+    const filter = document.getElementById('names-list').value.trim();
+    if (!filter) { alert('A caixa de nomes está vazia.'); return; }
+    
+    const targets = filter.split('\n').map(n => n.trim().toUpperCase()).filter(n => n);
+    const sel = globalEmployees.filter(emp => {
+        const up = emp.name.toUpperCase();
+        return targets.some(t => up.includes(t) || t.includes(up));
+    });
+    if (!sel.length) { alert('Nenhum funcionário encontrado na caixa de texto. Verifique os nomes.'); return; }
+
+    const wb = XLSX.utils.book_new();
+    for (const emp of sel) {
+        const ws = XLSX.utils.aoa_to_sheet([
+            ['Funcionário:', emp.name], [],
+            ['Data', 'Dia', 'Ent1', 'Sai1', 'Ent2', 'Sai2'],
+            ...emp.records.map(r => [ r.date, r.day, r.times[0] || '', r.times[1] || '', r.times[2] || '', r.times[3] || '' ])
+        ]);
+        ws['!cols'] = [{wch:12},{wch:6},{wch:8},{wch:8},{wch:8},{wch:8}];
+        
+        let sn = emp.name.replace(/[\\\/\?\*\[\]]/g, '').substring(0, 31).trim();
+        if (wb.SheetNames.includes(sn)) {
+            let counter = 1; let baseSn = sn.substring(0, 28).trim();
+            while (wb.SheetNames.includes(baseSn + ' ' + counter)) counter++;
+            sn = baseSn + ' ' + counter;
+        }
+        XLSX.utils.book_append_sheet(wb, ws, sn);
+    }
+    XLSX.writeFile(wb, globalFileName);
+}
+</script>
+</body>
+</html>
